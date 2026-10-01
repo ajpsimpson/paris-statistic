@@ -99,6 +99,9 @@ def model_table(seasons, players):
     df['target_year']=df.season+1
     df['target_ppg']=df.groupby('player_id').ppg.shift(-1)
     df['target_games']=df.groupby('player_id').games.shift(-1)
+    # Avoid treating tiny-sample spot appearances as full-season outcomes.
+    # Four games is the minimum evaluation sample for this preliminary pass.
+    df.loc[df['target_games'].fillna(0) < 4, 'target_ppg'] = np.nan
     return df
 
 
@@ -113,7 +116,9 @@ def overall_metrics(preds):
         _,ar=assign_starters(a,DEFAULT_CONFIG,'actual_ppg')
         b['pred_vor']=b.predicted_ppg-b.position.map(pr)
         b['actual_vor']=b.target_ppg-b.position.map(ar)
-        for gamma in [1.0,1.1,1.2,1.3]:
+        # A monotonic power transform cannot change rank correlation, so gamma is
+        # held at 1.0 for ranking tests. Stud effects belong in predictive features.
+        for gamma in [1.0]:
             x=b.copy(); x['gamma']=gamma
             x['pred_signal']=np.sign(x.pred_vor)*np.abs(x.pred_vor).pow(gamma)
             x['overall_rank']=x.pred_signal.rank(ascending=False,method='min')
