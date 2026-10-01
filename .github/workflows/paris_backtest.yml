@@ -1,4 +1,4 @@
-name: Paris v2.1.1 Historical Backtest
+name: Paris v2.2 Historical Backtest
 
 on:
   push:
@@ -34,18 +34,18 @@ jobs:
       - name: Run Paris core unit tests
         run: pytest -q
 
-      - name: Run Paris v2.1.1 2019-2023 rolling backtest
+      - name: Run Paris v2.2 role-survival backtest
         run: |
-          mkdir -p outputs_v211
-          python run_backtest_v211.py \
+          mkdir -p outputs_v22
+          python run_backtest_v22.py \
             --data-dir data/player_stats \
             --players-csv data/players.csv \
-            --out-dir outputs_v211 | tee outputs_v211/run_report.txt
+            --out-dir outputs_v22 | tee outputs_v22/run_report.txt
 
-      - name: Upload v2.1.1 backtest outputs
+      - name: Upload v2.2 backtest outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: paris-v211-backtest-results
-          path: outputs_v211/
+          name: paris-v22-backtest-results
+          path: outputs_v22/
           retention-days: 30
