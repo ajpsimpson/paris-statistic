@@ -1,0 +1,50 @@
+name: Paris v2 Historical Backtest
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download 2015-2023 NFLverse player stats
+        run: python download_nflverse_data.py
+
+      - name: Download NFLverse player metadata
+        run: |
+          mkdir -p data
+          curl -L --fail --retry 3 \
+            https://github.com/nflverse/nflverse-data/releases/download/players/players.csv \
+            -o data/players.csv
+
+      - name: Run Paris v2 unit tests
+        run: pytest -q
+
+      - name: Run 2019-2023 rolling backtest
+        run: |
+          python run_backtest_v2.py \
+            --data-dir data/player_stats \
+            --players-csv data/players.csv \
+            --out-dir outputs | tee outputs/run_report.txt
+
+      - name: Upload backtest outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: paris-v2-backtest-results
+          path: outputs/
+          retention-days: 30
