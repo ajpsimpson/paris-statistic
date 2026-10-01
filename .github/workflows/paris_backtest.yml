@@ -1,4 +1,4 @@
-name: Paris v2.2.1 Veteran Stress Test
+name: Paris v2.2.2 Preseason Roster Filter
 
 on:
   push:
@@ -24,32 +24,38 @@ jobs:
       - name: Download 2015-2023 NFLverse player stats
         run: python download_nflverse_data.py
 
-      - name: Download NFLverse player metadata and current historical-contract parquet
+      - name: Download NFLverse player metadata
         run: |
           mkdir -p data
           curl -L --fail --retry 3 \
             https://github.com/nflverse/nflverse-data/releases/download/players/players.csv \
             -o data/players.csv
-          curl -L --fail --retry 3 \
-            https://github.com/nflverse/nflverse-data/releases/download/contracts/historical_contracts.parquet \
-            -o data/historical_contracts.parquet
+
+      - name: Download 2019-2023 Week-level roster files only
+        run: |
+          mkdir -p data/weekly_rosters
+          for year in 2019 2020 2021 2022 2023; do
+            curl -L --fail --retry 3 \
+              https://github.com/nflverse/nflverse-data/releases/download/weekly_rosters/roster_weekly_${year}.parquet \
+              -o data/weekly_rosters/roster_weekly_${year}.parquet
+          done
 
       - name: Run Paris core unit tests
         run: pytest -q
 
-      - name: Run Paris v2.2.1 veteran role-survival stress test
+      - name: Run Paris v2.2.2 roster-filter backtest
         run: |
-          mkdir -p outputs_v221p
-          python run_stress_v221_current_contracts.py \
+          mkdir -p outputs_v222
+          python run_backtest_v222.py \
             --data-dir data/player_stats \
             --players-csv data/players.csv \
-            --contracts-parquet data/historical_contracts.parquet \
-            --out-dir outputs_v221p | tee outputs_v221p/run_report.txt
+            --roster-dir data/weekly_rosters \
+            --out-dir outputs_v222 | tee outputs_v222/run_report.txt
 
-      - name: Upload v2.2.1 stress-test outputs
+      - name: Upload v2.2.2 outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: paris-v221-current-contract-stress-results
-          path: outputs_v221p/
+          name: paris-v222-roster-filter-results
+          path: outputs_v222/
           retention-days: 30
