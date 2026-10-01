@@ -1,4 +1,4 @@
-name: Paris v2 Historical Backtest
+name: Paris v2.1 Historical Backtest
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -31,21 +31,21 @@ jobs:
             https://github.com/nflverse/nflverse-data/releases/download/players/players.csv \
             -o data/players.csv
 
-      - name: Run Paris v2 unit tests
+      - name: Run Paris core unit tests
         run: pytest -q
 
-      - name: Run 2019-2023 rolling backtest
+      - name: Run Paris v2.1 2019-2023 rolling backtest
         run: |
-          mkdir -p outputs
-          python run_backtest_v2.py \
+          mkdir -p outputs_v21
+          python run_backtest_v21.py \
             --data-dir data/player_stats \
             --players-csv data/players.csv \
-            --out-dir outputs | tee outputs/run_report.txt
+            --out-dir outputs_v21 | tee outputs_v21/run_report.txt
 
-      - name: Upload backtest outputs
+      - name: Upload v2.1 backtest outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: paris-v2-backtest-results
-          path: outputs/
+          name: paris-v21-backtest-results
+          path: outputs_v21/
           retention-days: 30
