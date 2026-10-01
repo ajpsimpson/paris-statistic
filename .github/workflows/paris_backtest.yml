@@ -1,4 +1,4 @@
-name: Paris v2.1 Historical Backtest
+name: Paris v2.1.1 Historical Backtest
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -34,18 +34,18 @@ jobs:
       - name: Run Paris core unit tests
         run: pytest -q
 
-      - name: Run Paris v2.1 2019-2023 rolling backtest
+      - name: Run Paris v2.1.1 2019-2023 rolling backtest
         run: |
-          mkdir -p outputs_v21
-          python run_backtest_v21.py \
+          mkdir -p outputs_v211
+          python run_backtest_v211.py \
             --data-dir data/player_stats \
             --players-csv data/players.csv \
-            --out-dir outputs_v21 | tee outputs_v21/run_report.txt
+            --out-dir outputs_v211 | tee outputs_v211/run_report.txt
 
-      - name: Upload v2.1 backtest outputs
+      - name: Upload v2.1.1 backtest outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: paris-v21-backtest-results
-          path: outputs_v21/
+          name: paris-v211-backtest-results
+          path: outputs_v211/
           retention-days: 30
