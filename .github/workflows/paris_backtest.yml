@@ -36,6 +36,7 @@ jobs:
 
       - name: Run 2019-2023 rolling backtest
         run: |
+          mkdir -p outputs
           python run_backtest_v2.py \
             --data-dir data/player_stats \
             --players-csv data/players.csv \
