@@ -18,11 +18,8 @@ EVAL_YEARS = [2019, 2020, 2021, 2022, 2023]
 DEPTH_YEARS = list(range(2016, 2024))
 Q = 0.25
 C = 0.1
-RISK_WEIGHT = 1.0
 POSITIONS = ["QB", "RB", "WR", "TE"]
 
-# First regular-season game dates. Cutoff is 23:59:59 UTC on that date,
-# which is still before the evening kickoff in every listed season.
 OPENING_DATES = {
     2016: "2016-09-08", 2017: "2017-09-07", 2018: "2018-09-06",
     2019: "2019-09-05", 2020: "2020-09-10", 2021: "2021-09-09",
@@ -34,42 +31,82 @@ DEPTH_FEATURES = [
 
 
 def load_preseason_depth(depth_dir: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Build one pre-kickoff depth-chart row per player-season.
+    """Normalize historical Week-1/pre-kickoff depth charts.
 
-    Only records timestamped before the first regular-season game are eligible.
-    For a player appearing multiple times, use his latest pre-kickoff timestamp;
-    if he occupies multiple slots at that timestamp, keep his best (lowest) rank.
+    nflverse uses two schemas. Through 2024 the legacy files contain Week 1,
+    `depth_team` (1/2/3), and `depth_position`. The newer ESPN-derived files use
+    timestamps and `pos_rank`. We support both so historical testing is stable.
+
+    The legacy data do not have an intraday timestamp, so for those seasons we use
+    the official REG Week-1 chart and no Week-1 performance data. The depth signal
+    is therefore treated as a preseason/Week-1 role feature, not an outcome.
     """
-    parts = []
-    diag = []
+    parts: list[pd.DataFrame] = []
+    diag: list[dict] = []
+
     for year in DEPTH_YEARS:
         path = Path(depth_dir) / f"depth_charts_{year}.parquet"
         if not path.exists():
             raise FileNotFoundError(path)
         df = pd.read_parquet(path)
-        required = {"dt", "gsis_id", "pos_rank"}
-        missing = required - set(df.columns)
-        if missing:
-            raise ValueError(f"{path} missing {sorted(missing)}; columns={list(df.columns)}")
+        cols = set(df.columns)
 
-        df["dt_parsed"] = pd.to_datetime(df["dt"], errors="coerce", utc=True)
-        cutoff = pd.Timestamp(OPENING_DATES[year] + "T23:59:59Z")
-        pre = df[df.dt_parsed.notna() & df.dt_parsed.le(cutoff) & df.gsis_id.notna()].copy()
-        if "pos_grp" in pre.columns:
-            offense = pre.pos_grp.astype(str).str.lower().str.contains("off", na=False)
-            if offense.any():
-                pre = pre[offense].copy()
-        pre["player_id"] = pre["gsis_id"].astype(str)
-        pre["pos_rank_num"] = pd.to_numeric(pre["pos_rank"], errors="coerce")
+        if {"season", "week", "game_type", "depth_team", "gsis_id"}.issubset(cols):
+            season_num = pd.to_numeric(df["season"], errors="coerce")
+            week_num = pd.to_numeric(df["week"], errors="coerce")
+            gt = df["game_type"].astype(str).str.upper()
+            snap = df[
+                season_num.eq(year) & week_num.eq(1) & gt.eq("REG") & df["gsis_id"].notna()
+            ].copy()
 
-        # Latest known chart appearance for each player before opening kickoff.
-        latest_dt = pre.groupby("player_id")["dt_parsed"].transform("max")
-        latest = pre[pre.dt_parsed.eq(latest_dt)].copy()
-        one = latest.groupby("player_id", as_index=False).agg(
-            depth_rank=("pos_rank_num", "min"),
-            depth_snapshot=("dt_parsed", "max"),
-        )
-        one["target_year"] = year
+            # Limit to the fantasy positions where possible. `depth_team` is a
+            # rank within a legacy depth slot, so a first-team LWR and first-team
+            # RWR can both correctly carry rank 1.
+            if "position" in snap.columns:
+                fantasy = snap["position"].astype(str).str.upper().isin(POSITIONS)
+                if fantasy.any():
+                    snap = snap[fantasy].copy()
+
+            snap["player_id"] = snap["gsis_id"].astype(str)
+            snap["depth_rank_num"] = pd.to_numeric(snap["depth_team"], errors="coerce")
+            snap = snap[snap.depth_rank_num.notna()].copy()
+
+            one = snap.groupby("player_id", as_index=False).agg(
+                depth_rank=("depth_rank_num", "min")
+            )
+            one["target_year"] = year
+            one["depth_snapshot"] = f"{year}_REG_week1_legacy"
+            schema = "legacy_week1"
+            earliest = np.nan
+            latest = np.nan
+
+        elif {"dt", "gsis_id", "pos_rank"}.issubset(cols):
+            df["dt_parsed"] = pd.to_datetime(df["dt"], errors="coerce", utc=True)
+            cutoff = pd.Timestamp(OPENING_DATES[year] + "T23:59:59Z")
+            snap = df[
+                df.dt_parsed.notna() & df.dt_parsed.le(cutoff) & df.gsis_id.notna()
+            ].copy()
+            if "pos_abb" in snap.columns:
+                fantasy = snap["pos_abb"].astype(str).str.upper().isin(POSITIONS)
+                if fantasy.any():
+                    snap = snap[fantasy].copy()
+            snap["player_id"] = snap["gsis_id"].astype(str)
+            snap["depth_rank_num"] = pd.to_numeric(snap["pos_rank"], errors="coerce")
+            snap = snap[snap.depth_rank_num.notna()].copy()
+
+            latest_dt = snap.groupby("player_id")["dt_parsed"].transform("max")
+            latest_rows = snap[snap.dt_parsed.eq(latest_dt)].copy()
+            one = latest_rows.groupby("player_id", as_index=False).agg(
+                depth_rank=("depth_rank_num", "min"),
+                depth_snapshot=("dt_parsed", "max"),
+            )
+            one["target_year"] = year
+            schema = "timestamp_pos_rank"
+            earliest = snap.dt_parsed.min()
+            latest = snap.dt_parsed.max()
+        else:
+            raise ValueError(f"Unrecognized depth schema in {path}: {list(df.columns)}")
+
         one["depth_present"] = 1.0
         one["depth_is_first"] = one.depth_rank.le(1).astype(float)
         one["depth_is_top2"] = one.depth_rank.le(2).astype(float)
@@ -78,14 +115,16 @@ def load_preseason_depth(depth_dir: str) -> tuple[pd.DataFrame, pd.DataFrame]:
 
         diag.append({
             "year": year,
+            "schema": schema,
             "raw_rows": len(df),
-            "pre_kickoff_rows": len(pre),
+            "snapshot_rows": len(snap),
             "unique_players": one.player_id.nunique(),
-            "earliest_pre_dt": pre.dt_parsed.min(),
-            "latest_pre_dt": pre.dt_parsed.max(),
             "rank1_players": int(one.depth_is_first.sum()),
             "rank2_or_better_players": int(one.depth_is_top2.sum()),
+            "earliest_timestamp": earliest,
+            "latest_timestamp": latest,
         })
+
     return pd.concat(parts, ignore_index=True), pd.DataFrame(diag)
 
 
@@ -183,8 +222,12 @@ def main() -> None:
     metrics_df = pd.DataFrame(metrics)
     ranks_df = pd.concat(ranks, ignore_index=True)
     depth_qbs = depth_qb_diagnostics(depth_preds)
-    depth_coverage = table[table.target_year.isin(EVAL_YEARS)].groupby(["target_year", "position"], as_index=False).agg(
-        rows=("player_id", "size"), depth_match_rate=("depth_present", "mean"), median_depth_rank=("depth_rank", "median")
+    depth_coverage = table[table.target_year.isin(EVAL_YEARS)].groupby(
+        ["target_year", "position"], as_index=False
+    ).agg(
+        rows=("player_id", "size"),
+        depth_match_rate=("depth_present", "mean"),
+        median_depth_rank=("depth_rank", "median")
     )
 
     metrics_df.to_csv(out/"v223_depth_comparison_metrics.csv", index=False)
@@ -194,11 +237,11 @@ def main() -> None:
     depth_qbs.to_csv(out/"v223_qb_depth_diagnostics.csv", index=False)
     roster_diag.to_csv(out/"v223_roster_diagnostics.csv", index=False)
 
-    print("=== PRE-KICKOFF DEPTH SNAPSHOT DIAGNOSTICS ===")
+    print("=== WEEK-1 DEPTH SNAPSHOT DIAGNOSTICS ===")
     print(depth_diag.to_string(index=False))
     print("\n=== DEPTH COVERAGE OF RETURNING PREDICTION ROWS ===")
     print(depth_coverage.to_string(index=False))
-    print("\n=== V2.2.2 ROSTER-ONLY VS V2.2.3 + PRESEASON DEPTH ===")
+    print("\n=== V2.2.2 ROSTER-ONLY VS V2.2.3 + WEEK-1 DEPTH ===")
     print(metrics_df.sort_values(["year", "pool"]).to_string(index=False))
 
     for label in ["roster_base_role", "roster_plus_depth_role"]:
@@ -212,12 +255,17 @@ def main() -> None:
         print("2023 Top-24 overlap:", round(float(m[m.year.eq(2023)].top24_overlap.iloc[0]), 4))
 
     q = depth_qbs[depth_qbs.target_year.eq(2023)].head(25)
-    print("\n=== 2023 QB ROLE DIAGNOSTIC WITH PRESEASON DEPTH ===")
+    print("\n=== 2023 QB ROLE DIAGNOSTIC WITH WEEK-1 DEPTH ===")
     print(q.to_string(index=False))
 
-    d23 = ranks_df[(ranks_df.pool.eq("roster_plus_depth_role")) & ranks_df.target_year.eq(2023)].sort_values("overall_rank").head(35)
+    d23 = ranks_df[
+        ranks_df.pool.eq("roster_plus_depth_role") & ranks_df.target_year.eq(2023)
+    ].sort_values("overall_rank").head(35)
     print("\n=== 2023 V2.2.3 TOP 35 (RETURNERS ONLY) ===")
-    print(d23[["overall_rank","player_name","position","predicted_ppg","role_prob","predicted_value","actual_week_value","pred_vor","actual_vor"]].to_string(index=False))
+    print(d23[[
+        "overall_rank", "player_name", "position", "predicted_ppg", "role_prob",
+        "predicted_value", "actual_week_value", "pred_vor", "actual_vor"
+    ]].to_string(index=False))
 
 
 if __name__ == "__main__":
