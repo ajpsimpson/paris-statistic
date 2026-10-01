@@ -1,4 +1,4 @@
-name: Paris v2.2 Historical Backtest
+name: Paris v2.2.1 Veteran Stress Test
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -24,28 +24,32 @@ jobs:
       - name: Download 2015-2023 NFLverse player stats
         run: python download_nflverse_data.py
 
-      - name: Download NFLverse player metadata
+      - name: Download NFLverse player metadata and historical contracts
         run: |
           mkdir -p data
           curl -L --fail --retry 3 \
             https://github.com/nflverse/nflverse-data/releases/download/players/players.csv \
             -o data/players.csv
+          curl -L --fail --retry 3 \
+            https://github.com/nflverse/nflverse-data/releases/download/contracts/historical_contracts.csv.gz \
+            -o data/historical_contracts.csv.gz
 
       - name: Run Paris core unit tests
         run: pytest -q
 
-      - name: Run Paris v2.2 role-survival backtest
+      - name: Run Paris v2.2.1 veteran role-survival stress test
         run: |
-          mkdir -p outputs_v22
-          python run_backtest_v22.py \
+          mkdir -p outputs_v221
+          python run_stress_v221.py \
             --data-dir data/player_stats \
             --players-csv data/players.csv \
-            --out-dir outputs_v22 | tee outputs_v22/run_report.txt
+            --contracts-csv data/historical_contracts.csv.gz \
+            --out-dir outputs_v221 | tee outputs_v221/run_report.txt
 
-      - name: Upload v2.2 backtest outputs
+      - name: Upload v2.2.1 stress-test outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: paris-v22-backtest-results
-          path: outputs_v22/
+          name: paris-v221-veteran-stress-results
+          path: outputs_v221/
           retention-days: 30
