@@ -1,4 +1,4 @@
-name: Paris v2.2.4 QB Depth Transition Test
+name: Paris v2.2.5 QB Role Threshold Test
 
 on:
   push:
@@ -52,20 +52,20 @@ jobs:
       - name: Run Paris core unit tests
         run: pytest -q
 
-      - name: Run Paris v2.2.4 QB transition test
+      - name: Run Paris v2.2.5 QB role threshold test
         run: |
-          mkdir -p outputs_v224
-          python run_backtest_v224.py \
+          mkdir -p outputs_v225
+          python run_backtest_v225.py \
             --data-dir data/player_stats \
             --players-csv data/players.csv \
             --roster-dir data/weekly_rosters \
             --depth-dir data/depth_charts \
-            --out-dir outputs_v224 | tee outputs_v224/run_report.txt
+            --out-dir outputs_v225 | tee outputs_v225/run_report.txt
 
-      - name: Upload v2.2.4 outputs
+      - name: Upload v2.2.5 outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: paris-v224-qb-transition-results
-          path: outputs_v224/
+          name: paris-v225-qb-threshold-results
+          path: outputs_v225/
           retention-days: 30
