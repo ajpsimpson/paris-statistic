@@ -81,13 +81,50 @@ The 2019-2022 average overall Spearman is about 0.818. The 2023 result is about 
 
 **The returning-player role-survival architecture is frozen at v2.2.5.** Further role tuning is intentionally stopped to reduce overfitting risk. Remaining misses such as unpredictable injuries are treated as event risk rather than reasons to keep modifying the historical model.
 
+## Paris v2.3 rookie pathway
+
+Rookies require a separate pathway because they have no NFL lagged production or opportunity. Paris v2.3 tested rookie models using only information available before the rookie season.
+
+Candidate feature groups were:
+
+1. draft capital and age;
+2. draft capital + combine measurements;
+3. draft capital + Week-1 roster/depth-chart information;
+4. all of the above.
+
+The selected rookie model was **draft capital + preseason depth chart**, using Ridge alpha 300. The combine-only additions did not improve the model enough to keep them in the selected version.
+
+Selected rookie-only results:
+
+| Year | Rookie Spearman | Top-10 overlap | Top-20 overlap |
+| --- | ---: | ---: | ---: |
+| 2019 | 0.634 | 60% | 60% |
+| 2020 | 0.734 | 40% | 70% |
+| 2021 | 0.715 | 70% | 65% |
+| 2022 | 0.754 | 50% | 60% |
+| 2023 validation | 0.790 | 50% | 65% |
+
+The 2019-2022 average rookie Spearman is about 0.709. The 2023 validation result is about 0.790.
+
+After merging the selected rookie pathway with the frozen v2.2.5 returning-player model, Paris produced:
+
+| Year | Merged Spearman | Top-24 overlap | Top-50 overlap |
+| --- | ---: | ---: | ---: |
+| 2019 | 0.800 | 33.3% | 46% |
+| 2020 | 0.838 | 45.8% | 46% |
+| 2021 | 0.812 | 41.7% | 60% |
+| 2022 | 0.842 | 41.7% | 58% |
+| 2023 validation | 0.831 | 37.5% | 52% |
+
+The rookie experiment also showed that draft capital and preseason depth-chart position were more consistently useful than adding combine testing. This is a useful negative result: more variables did not automatically make the model better.
+
+**The rookie one-year architecture is now frozen at v2.3.** The next development stage is the multi-year dynasty horizon. The 2024 and 2025 football outcomes remain sealed.
+
 ## Remaining major steps
 
-1. Build and validate a separate rookie pathway because rookies have no NFL lagged production.
-2. Merge rookie and returning-player values into one league-relative ranking.
-3. Build and validate a multi-year dynasty horizon rather than only next-season value.
-4. Freeze the full Paris architecture.
-5. Only then open the 2024 and 2025 football-outcome holdouts.
+1. Build and validate a multi-year dynasty horizon rather than only next-season value.
+2. Freeze the full Paris architecture.
+3. Only then open the 2024 and 2025 football-outcome holdouts.
 
 The current season-level backtest still does not add the rare +1 bonus for 50+ yard touchdowns because that requires the play-by-play scoring pass. The league definition above remains the intended final scoring format.
 
@@ -103,9 +140,10 @@ The current season-level backtest still does not add the rare +1 bonus for 50+ y
 - `run_backtest_v223.py` — Week-1 depth-chart role test
 - `run_backtest_v224.py` — rejected interaction-heavy QB transition test
 - `run_backtest_v225.py` — selected position-specific QB role-threshold test
+- `run_backtest_v23_rookies.py` — separate rookie model and merged veteran/rookie backtest
 - `download_nflverse_data.py` — downloads historical football data only through 2023
 - `test_paris_v2_core.py` — unit tests for the core model logic
 
 ## Status
 
-Returning-player performance and role-survival architecture are now frozen through v2.2.5. Rookie modeling is the next active development stage. The 2024-2025 football outcomes remain sealed.
+Returning-player architecture is frozen at v2.2.5 and the rookie one-year architecture is frozen at v2.3. The next active modeling stage is a multi-year dynasty-value horizon. The 2024-2025 football outcomes remain sealed.
