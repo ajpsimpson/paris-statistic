@@ -1,6 +1,6 @@
 # Paris Statistic
 
-Paris Statistic is a dynasty fantasy-football valuation project designed to turn player production, opportunity, age, draft capital, availability, team context, positional scarcity, and repeated elite performance into a transparent dynasty ranking system.
+Paris Statistic is a dynasty fantasy-football valuation project designed to turn player production, opportunity, age, draft capital, availability, preseason role, positional scarcity, and repeated elite performance into a transparent dynasty ranking system.
 
 ## Current research design
 
@@ -9,15 +9,15 @@ Paris Statistic is a dynasty fantasy-football valuation project designed to turn
 - Scoring: 1 PPR, 1 point per 25 passing yards, 5 per passing TD, -2 per interception, 1 per 10 rushing/receiving yards, 6 per rushing/receiving TD, -2 per lost fumble, +1 for a 50+ yard TD
 - Historical development uses football outcomes only through 2023
 - Locked football-outcome holdout seasons: 2024-2025
-- Outputs: positional rankings plus one overall Top 150
+- Outputs: positional rankings plus one overall Top 150 on a 0-1,000 Paris scale
 
-No 2024 or 2025 football outcomes have been used to choose or tune the model.
+**No 2024 or 2025 football outcomes have been used to choose or tune the architecture documented below.**
 
 ## Paris v2 philosophy
 
 Paris v2 separates football prediction from dynasty valuation. First it predicts future player performance, then estimates role/availability risk, converts the result to league-specific replacement value, adds a separate rookie pathway, and finally applies a modest multi-year longevity layer.
 
-The goal is not to hand-pick weights until the rankings look right. The goal is to test assumptions historically, keep only features that improve out-of-sample performance, and reject extra complexity when it does not help.
+The goal is not to hand-pick weights until the rankings look right. The goal is to test assumptions historically, keep only features that improve out-of-sample performance, reject extra complexity when it does not help, and freeze the architecture before opening the holdout seasons.
 
 ## Paris v2.1.1 performance model
 
@@ -34,27 +34,13 @@ The v2.1.1 whole-ranking Spearman results were 0.702, 0.718, 0.720, 0.742, and 0
 
 Paris v2.2 added a separate logistic classifier for the probability that a player retains a meaningful role the following season. Under the same availability-adjusted season-value target, the role layer improved average pre-2023 Spearman from about 0.703 to about 0.734 and 2023 validation from about 0.745 to about 0.757.
 
-A veteran/contract stress test found that historical contract information improves narrow roster-security classification but did not improve the complete ranking enough to replace the simpler role model. Contract information is therefore reserved as a possible secondary career-continuation signal rather than forced into the main equation.
+A veteran/contract stress test found that historical contract information improved narrow roster-security classification but did not improve the complete ranking enough to replace the simpler role model. Contract information was therefore not forced into the main equation.
 
 ## Paris v2.2.2-v2.2.5: roster, depth chart, and QB role refinement
 
-The role layer was stress-tested using information that would have been known at the start of each season.
+A Week-1 nflverse roster filter removes players who were already retired, unsigned, or otherwise not on an NFL roster while retaining injured/reserve players who still represented dynasty assets.
 
-### Week-1 roster eligibility
-
-A Week-1 nflverse roster filter removes players who were already retired, unsigned, or otherwise not on an NFL roster while retaining injured/reserve players who still represented dynasty assets. This modestly improved the full ranking but materially improved veteran ordering.
-
-### Week-1 depth chart
-
-Historical nflverse depth-chart information was added as a role input. This produced the largest role-layer gain:
-
-- 2019-2022 average overall Spearman: about 0.736 before depth -> about 0.816 with depth
-- 2023 overall Spearman: about 0.760 -> about 0.810
-- 2019-2022 average veteran Spearman: about 0.724 -> about 0.803
-
-### Position-specific QB role definition
-
-Paris tested stricter QB definitions of a meaningful role while leaving RB/WR/TE unchanged. The selected threshold was:
+Historical Week-1 depth-chart information produced the largest role-layer gain. Paris then tested stricter QB definitions of a meaningful role while leaving RB/WR/TE unchanged. The selected threshold was:
 
 - QB: at least four games and at least the 55th percentile of next-season QB opportunity
 - RB/WR/TE: at least four games and at least the 25th percentile of position opportunity
@@ -62,7 +48,7 @@ Paris tested stricter QB definitions of a meaningful role while leaving RB/WR/TE
 - full role-probability multiplier on projected PPG
 - Week-1 roster eligibility and Week-1 depth-chart features included
 
-With the selected QB threshold, Paris achieved:
+Selected v2.2.5 results:
 
 | Year | Overall Spearman | Top-24 overlap |
 | --- | ---: | ---: |
@@ -78,7 +64,7 @@ With the selected QB threshold, Paris achieved:
 
 Rookies require a separate pathway because they have no NFL lagged production or opportunity. Candidate feature groups tested draft capital/age, combine measurements, and preseason role information.
 
-The selected rookie model was **draft capital + preseason depth chart**, using Ridge alpha 300. The combine additions did not improve the model enough to keep them.
+The selected rookie model was **draft capital + preseason depth chart**, using Ridge alpha 300. Combine additions did not improve the model enough to keep them.
 
 Selected rookie-only results:
 
@@ -106,44 +92,79 @@ After merging the rookie pathway with the frozen returning-player model:
 
 The first multi-year attempt used a new Ridge model to predict a discounted three-year sum of future replacement value from the one-year Paris signal, age, position, draft capital, and role information. It was rejected because the extra regression made the full ranking worse than the simpler one-year VOR baseline.
 
-For example, the rejected model's three-year Spearman was 0.590 vs 0.629 for the baseline in 2019, 0.635 vs 0.653 in 2020, and 0.638 vs 0.672 in 2021. This is an intentional negative result: a more complicated model was not kept merely because it looked more sophisticated.
-
 Paris v2.4.1 instead estimates empirical **age-by-position surplus-retention curves**. For each position and age bucket, it measures how much positive above-replacement value historically survived into the following year, with sparse age buckets shrunk toward the position-wide average.
 
-The dynasty horizon is then:
+For players at or above replacement, the dynasty horizon is:
 
-`DynastyScore = CurrentPositiveVOR × [1 + d × R(age,pos) + d² × R(age,pos) × R(age+1,pos)]`
+`DynastyScore = VOR × [1 + d × R(age,pos) + d² × R(age,pos) × R(age+1,pos)]`
 
-where `R` is the historically estimated retention rate. The no-adjustment one-year score was included as an explicit candidate, so the longevity layer would only be selected if it improved the historical tests.
-
-The selected v2.4.1 settings were:
+Selected settings:
 
 - future-year discount `d = 0.50`
 - age-bucket shrink parameter = 5
 - retention capped at 1.00
 - full use of the retention multiplier
-- three-year target = discounted sum of positive future VOR; being below replacement contributes zero rather than negative dynasty asset value
+- three-year evaluation target = discounted sum of positive future VOR
 
-Complete three-year backtests:
+The Spearman improvement was deliberately small rather than transformative, but the retention version improved all three complete three-year cohorts and improved Top-50 identification in all three. The broader multi-year Ridge model was therefore rejected while the modest retention adjustment was kept.
 
-| Forecast | v2.4.1 Spearman | One-year baseline | Top-50 v2.4.1 | Top-50 baseline |
-| --- | ---: | ---: | ---: | ---: |
-| 2019 -> 2019-21 | 0.634 | 0.633 | 54% | 52% |
-| 2020 -> 2020-22 | 0.655 | 0.654 | 56% | 52% |
-| 2021 -> 2021-23 | 0.676 | 0.675 | 70% | 68% |
+## Paris v2.4.2: exact 50+ yard touchdown scoring
 
-The Spearman gains are deliberately described as **small**, not transformative. The useful finding is that the retention layer improved all three complete test cohorts and improved Top-50 identification in all three, while the broader multi-year regression failed. Paris therefore keeps v2.4.1 as a modest longevity adjustment rather than allowing it to override the stronger one-year model.
+The historical scoring pass now uses nflverse play-by-play to implement the league's exact long-touchdown rule.
 
-2022 has only a two-year observable horizon through 2023 and 2023 only a one-year observable horizon; those later cohorts are retained as partial diagnostics rather than pretending that a full three-year target is available.
+- A 50+ yard passing TD gives the passer the normal passing TD plus the +1 long-TD bonus.
+- The receiver on that play also gets the normal receiving TD plus the +1 long-TD bonus.
+- A 50+ yard rushing TD gives the rusher the normal rushing TD plus the +1 long-TD bonus.
+- Defensive/return TDs are not included in the Paris offensive-player scoring specification.
 
-## Before the holdout is opened
+This correction added about 123-171 fantasy bonus credits league-wide per season from 2012-2023 and changed the backtest only slightly, as expected for a rare scoring event. The architecture and hyperparameters were not reopened because of the scoring correction.
 
-The main statistical architecture is now in place: returning-player model, role survival, rookie pathway, and multi-year retention horizon. Before evaluating the sealed 2024-2025 outcomes, two implementation steps remain:
+## Paris v2.4.3: real Top-150 tail and 0-1,000 scale
 
-1. add the rare +1 50-yard-touchdown scoring bonus through a play-by-play scoring pass so the historical scoring exactly matches the intended league settings;
-2. map the final continuous dynasty score to the public-facing 0-1,000 Paris scale without changing player order.
+A structural audit found that the league has 132 starting slots. The v2.4.1 positive-VOR formulation therefore produced 132 above-replacement players and then tied almost every player below replacement at zero. That meant positions 133-150 were not meaningfully ordered.
 
-Only after those implementation steps are fixed should 2024-2025 be opened for the final holdout test.
+Before the holdout was opened, Paris tested four contained tail rules. Every rule left all positive-VOR players and the v2.4.1 longevity calculation unchanged; the only question was how to order players at or below replacement. The selected rule was the simplest **signed VOR tail**:
+
+- if `VOR > 0`: keep the frozen v2.4.1 longevity-adjusted score;
+- if `VOR <= 0`: use the raw signed VOR to order the below-replacement tail.
+
+This produced the best pre-holdout Top-150 capture among the tested tail rules:
+
+| Forecast | Top-50 | Top-100 | Top-150 |
+| --- | ---: | ---: | ---: |
+| 2019 -> 2019-21 | 52% | 66% | 66.7% |
+| 2020 -> 2020-22 | 56% | 68% | 72.7% |
+| 2021 -> 2021-23 | 70% | 68% | 70.7% |
+
+For comparison, the old clipped tail had Top-150 overlap of 64%, 68%, and 66% in those three cohorts. Top-50 and Top-100 order were unchanged by the tail fix.
+
+Whole-pool Spearman is not the selection metric for this stage. Resolving hundreds of previously tied fringe players lowers whole-pool rank correlation against a target that also contains many zero-value fringe ties. The v2.4.3 tail stage exists specifically to make the requested Top 150 meaningful, so Top-150 capture is the relevant test while the top of the board is held fixed.
+
+### Public 0-1,000 Paris scale
+
+The 0-1,000 score is a monotonic presentation transform of the frozen dynasty signal; it does not alter ranking order.
+
+Within each preseason Top 150:
+
+- rank 1's raw dynasty signal maps to **1000**;
+- rank 150's raw dynasty signal maps to **1**;
+- values in between are linearly scaled between those anchors;
+- players outside the Top 150 receive **0** on the public Top-150 scale.
+
+Historical audits showed a Spearman correlation of exactly 1.000 between raw dynasty signal and public Paris Score within every Top 150, confirming that the scale does not change order.
+
+## Pre-holdout freeze
+
+The statistical architecture is now frozen before opening 2024-2025 football outcomes:
+
+1. returning-player performance + role survival: **v2.2.5**;
+2. rookie pathway: **v2.3**, draft capital + preseason depth chart, Ridge alpha 300;
+3. dynasty longevity: **v2.4.1**, age-position retention with `d=.50`, shrink 5, cap 1.00;
+4. exact league scoring: **v2.4.2**, including the +1 50+ yard TD rule;
+5. Top-150 tail: **v2.4.3 signed VOR below replacement**;
+6. public scale: monotonic Top-150 1-1000 transform.
+
+Architecture code was frozen at commit `f139dbec901c1d8a516bff6948b19893752a1483` before any 2024 or 2025 football outcome was opened for the final holdout evaluation.
 
 ## Files
 
@@ -160,9 +181,11 @@ Only after those implementation steps are fixed should 2024-2025 be opened for t
 - `run_backtest_v23_rookies.py` — separate rookie model and merged veteran/rookie backtest
 - `run_backtest_v24_horizon.py` — rejected broad multi-year Ridge experiment
 - `run_backtest_v241_retention.py` — selected empirical age-position longevity layer
-- `download_nflverse_data.py` — standard historical-data downloader capped at 2023
+- `paris_long_td_bonus.py` — exact 50+ yard touchdown scoring pass
+- `run_backtest_v242_exact_scoring.py` — exact-scoring integration and audit
+- `run_backtest_v243_top150.py` — below-replacement Top-150 tail test and final public scale
 - `test_paris_v2_core.py` — unit tests for the core model logic
 
 ## Status
 
-Returning-player architecture is frozen at v2.2.5, rookie one-year architecture at v2.3, and the modest longevity layer at v2.4.1. The 2024-2025 football outcomes remain sealed. Exact long-touchdown scoring and final 0-1,000 presentation scaling are the last implementation steps before the holdout evaluation.
+**Paris v2.4.3 is the pre-holdout frozen architecture.** The 2024 and 2025 football outcomes remain sealed. The next step is a one-shot holdout evaluation; its results should be reported whether they are strong, mediocre, or poor, without changing the frozen architecture afterward and pretending the holdout remained untouched.
