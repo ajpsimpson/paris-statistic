@@ -19,8 +19,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Download 2015-2023 NFLverse player stats
-        run: python download_nflverse_data.py
+      - name: Download 2012-2023 NFLverse player stats for horizon training
+        run: |
+          mkdir -p data/player_stats
+          for year in 2012 2013 2014 2015 2016 2017 2018 2019 2020 2021 2022 2023; do
+            curl -L --fail --retry 3 https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_${year}.csv -o data/player_stats/player_stats_${year}.csv
+          done
 
       - name: Download player, draft and combine data
         run: |
