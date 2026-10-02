@@ -1,0 +1,79 @@
+name: Paris v2.4.2 Exact Scoring Freeze
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download 2012-2023 NFLverse player stats
+        run: |
+          mkdir -p data/player_stats
+          for year in 2012 2013 2014 2015 2016 2017 2018 2019 2020 2021 2022 2023; do
+            curl -L --fail --retry 3 https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_${year}.csv -o data/player_stats/player_stats_${year}.csv
+          done
+
+      - name: Download player, draft and combine data
+        run: |
+          mkdir -p data
+          curl -L --fail --retry 3 https://github.com/nflverse/nflverse-data/releases/download/players/players.csv -o data/players.csv
+          curl -L --fail --retry 3 https://github.com/nflverse/nflverse-data/releases/download/draft_picks/draft_picks.parquet -o data/draft_picks.parquet
+          curl -L --fail --retry 3 https://github.com/nflverse/nflverse-data/releases/download/combine/combine.parquet -o data/combine.parquet
+
+      - name: Download 2012-2023 weekly rosters
+        run: |
+          mkdir -p data/weekly_rosters
+          for year in 2012 2013 2014 2015 2016 2017 2018 2019 2020 2021 2022 2023; do
+            curl -L --fail --retry 3 https://github.com/nflverse/nflverse-data/releases/download/weekly_rosters/roster_weekly_${year}.parquet -o data/weekly_rosters/roster_weekly_${year}.parquet
+          done
+
+      - name: Download 2016-2023 historical depth charts
+        run: |
+          mkdir -p data/depth_charts
+          for year in 2016 2017 2018 2019 2020 2021 2022 2023; do
+            curl -L --fail --retry 3 https://github.com/nflverse/nflverse-data/releases/download/depth_charts/depth_charts_${year}.parquet -o data/depth_charts/depth_charts_${year}.parquet
+          done
+
+      - name: Download 2012-2023 play-by-play for exact long-TD scoring
+        run: |
+          mkdir -p data/pbp
+          for year in 2012 2013 2014 2015 2016 2017 2018 2019 2020 2021 2022 2023; do
+            curl -L --fail --retry 3 https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_${year}.parquet -o data/pbp/play_by_play_${year}.parquet
+          done
+
+      - name: Run core tests
+        run: pytest -q
+
+      - name: Run Paris v2.4.2 exact-scoring freeze candidate
+        run: |
+          mkdir -p outputs_v242_exact
+          python run_backtest_v242_exact_scoring.py \
+            --data-dir data/player_stats \
+            --players-csv data/players.csv \
+            --draft-parquet data/draft_picks.parquet \
+            --combine-parquet data/combine.parquet \
+            --roster-dir data/weekly_rosters \
+            --depth-dir data/depth_charts \
+            --pbp-dir data/pbp \
+            --out-dir outputs_v242_exact | tee outputs_v242_exact/run_report.txt
+
+      - name: Upload v2.4.2 outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: paris-v242-exact-results
+          path: outputs_v242_exact/
+          retention-days: 30
