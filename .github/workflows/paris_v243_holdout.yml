@@ -26,9 +26,10 @@ jobs:
       - name: Download 2012-2025 NFLverse player stats
         run: |
           mkdir -p data/player_stats
-          for year in $(seq 2012 2025); do
+          for year in $(seq 2012 2024); do
             curl -L --fail --retry 3 https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_${year}.csv -o data/player_stats/player_stats_${year}.csv
           done
+          curl -L --fail --retry 3 https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2025.csv -o data/player_stats/player_stats_2025.csv
 
       - name: Download player, draft and combine data
         run: |
