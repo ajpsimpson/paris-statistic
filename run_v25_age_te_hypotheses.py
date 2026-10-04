@@ -152,6 +152,9 @@ def build_prediction_pool(table: pd.DataFrame, eligible: dict[int, set[str]], rb
             continue
         g = pd.concat(parts, ignore_index=True)
         g = g[g.player_id.astype(str).isin(eligible[year])].drop_duplicates("player_id").copy()
+        # Longevity must use age entering the forecast season, matching the
+        # frozen v2.4.x pipeline.
+        g["age"] = pd.to_numeric(g["age_next"], errors="coerce")
         _, repl = assign_starters(g[["player_id","position","predicted_value"]], DEFAULT_CONFIG, "predicted_value")
         g["pred_vor"] = g.predicted_value - g.position.map(repl)
         g["rb_variant"] = rb_variant
