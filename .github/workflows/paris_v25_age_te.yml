@@ -1,0 +1,68 @@
+name: Paris v2.5 RB Age + TE Persistence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'run_v25_age_te_hypotheses.py'
+      - '.github/workflows/paris_v25_age_te.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Download 2012-2023 player stats
+        run: |
+          mkdir -p data/player_stats
+          for year in $(seq 2012 2023); do
+            curl -L --fail --retry 3 https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_${year}.csv -o data/player_stats/player_stats_${year}.csv
+          done
+      - name: Download players
+        run: |
+          mkdir -p data
+          curl -L --fail --retry 3 https://github.com/nflverse/nflverse-data/releases/download/players/players.csv -o data/players.csv
+      - name: Download 2012-2023 weekly rosters
+        run: |
+          mkdir -p data/weekly_rosters
+          for year in $(seq 2012 2023); do
+            curl -L --fail --retry 3 https://github.com/nflverse/nflverse-data/releases/download/weekly_rosters/roster_weekly_${year}.parquet -o data/weekly_rosters/roster_weekly_${year}.parquet
+          done
+      - name: Download 2016-2023 depth charts
+        run: |
+          mkdir -p data/depth_charts
+          for year in $(seq 2016 2023); do
+            curl -L --fail --retry 3 https://github.com/nflverse/nflverse-data/releases/download/depth_charts/depth_charts_${year}.parquet -o data/depth_charts/depth_charts_${year}.parquet
+          done
+      - name: Download 2012-2023 play-by-play
+        run: |
+          mkdir -p data/pbp
+          for year in $(seq 2012 2023); do
+            curl -L --fail --retry 3 https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_${year}.parquet -o data/pbp/play_by_play_${year}.parquet
+          done
+      - name: Run core tests
+        run: pytest -q
+      - name: Run hypothesis test
+        run: |
+          mkdir -p outputs_v25_age_te
+          python run_v25_age_te_hypotheses.py \
+            --data-dir data/player_stats \
+            --players-csv data/players.csv \
+            --roster-dir data/weekly_rosters \
+            --depth-dir data/depth_charts \
+            --pbp-dir data/pbp \
+            --out-dir outputs_v25_age_te | tee outputs_v25_age_te/run_report.txt
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: paris-v25-age-te-results
+          path: outputs_v25_age_te/
+          retention-days: 30
